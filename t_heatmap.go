@@ -10,9 +10,14 @@ import (
 
 func main() {
 	var width int
+	var y_step int = int(^uint(0) >> 1)
 	if len(os.Args) > 1 {
 		u, _ := strconv.ParseInt(os.Args[1], 10, 32)
 		width = int(u)
+		if len(os.Args) > 2 {
+			v, _ := strconv.ParseInt(os.Args[2], 10, 32)
+			y_step = int(v)
+		}
 	} else {
 		width = 64
 	}
@@ -22,6 +27,10 @@ func main() {
 
 	w := bufio.NewWriter(os.Stdout)
 	for y := 0; y < height; y += 2 {
+		if y > 0 && (y % y_step == 0) {
+			_, _ = fmt.Fprintln(w)
+		}
+
 		ih := width * y;
 		il := ih + width;
 		for x := 0; x < width; x++ {
