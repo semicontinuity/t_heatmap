@@ -11,20 +11,25 @@ import (
 // Displays Heat Map for the binary data, fed to STDIN, in the terminal.
 // Every terminal character contains 2 vertical "pixels"
 //
-// Command line parameters: <format> <width> <separator stride>
+// Command line parameters: <format> <width> [separator stride] [color scheme]
 //
 // <format>: u1 or u8
 //
 // If Separator Stride is set, then a line break is inserted after Stride lines of "pixels" (it has to be even number).
 // This is useful to display multiple "heatmaps" with the same geometry, contained in the data stream.
+//
+// Color scheme:
+// - If set to "256" and format is "u8", then bytes are colored using ANSI 256-color scheme.
+// - Otherwise, bytes are colored using grayscale scheme.
 func main() {
 	run()
 }
 
 func run() {
 	var width = 64
-	var y_separator_stride = int(^uint(0) >> 1) // large number?
+	var ySeparatorStride = int(^uint(0) >> 1) // large number?
 	var dataFormat = "u8"
+	var ansi256 = false
 
 	w := bufio.NewWriter(os.Stdout)
 
@@ -35,7 +40,10 @@ func run() {
 			width = int(u)
 			if len(os.Args) > 3 {
 				v, _ := strconv.ParseInt(os.Args[3], 10, 32)
-				y_separator_stride = int(v)
+				ySeparatorStride = int(v)
+			}
+			if len(os.Args) > 4 {
+				ansi256 = true
 			}
 		}
 	}
@@ -46,91 +54,95 @@ func run() {
 		if width%8 != 0 {
 			os.Exit(1)
 		}
-		heatMapU1(w, data, width, y_separator_stride)
+		heatMapU1(w, data, width, ySeparatorStride)
 	} else {
-		heatMapU8(w, data, width, y_separator_stride)
+		heatMapU8(w, data, width, ySeparatorStride, ansi256)
 	}
 
 	_ = w.Flush()
 }
 
-func heatMapU1(w *bufio.Writer, data []byte, widthBits int, y_separator_stride int) {
+func heatMapU1(w *bufio.Writer, data []byte, widthBits int, ySeparatorStride int) {
 	widthBytes := widthBits / 8
 	height := (len(data) + widthBytes - 1) / widthBytes
 
 	for y := 0; y < height; y += 2 {
-		if y > 0 && (y%y_separator_stride == 0) {
+		if y > 0 && (y%ySeparatorStride == 0) {
 			_, _ = fmt.Fprintln(w)
 		}
 
-		top_byte_offset := widthBytes * y
-		bot_byte_offset := top_byte_offset + widthBytes
+		topByteOffset := widthBytes * y
+		botByteOffset := topByteOffset + widthBytes
 		for x := 0; x < widthBytes; x++ {
-			var top_byte byte = 0
-			if top_byte_offset < len(data) {
-				top_byte = data[top_byte_offset]
+			var topByte byte = 0
+			if topByteOffset < len(data) {
+				topByte = data[topByteOffset]
 			}
-			var bot_byte byte = 0
-			if bot_byte_offset < len(data) {
-				bot_byte = data[bot_byte_offset]
+			var btmByte byte = 0
+			if botByteOffset < len(data) {
+				btmByte = data[botByteOffset]
 			}
 
-			renderBytes(w, top_byte, bot_byte)
+			renderBytes(w, topByte, btmByte)
 
-			top_byte_offset++
-			bot_byte_offset++
+			topByteOffset++
+			botByteOffset++
 		}
 		_, _ = fmt.Fprintln(w)
 	}
 }
 
-func renderBytes(w *bufio.Writer, top_byte byte, bot_byte byte) {
-	renderBits(w, top_byte, bot_byte, 0)
-	renderBits(w, top_byte, bot_byte, 1)
-	renderBits(w, top_byte, bot_byte, 2)
-	renderBits(w, top_byte, bot_byte, 3)
-	renderBits(w, top_byte, bot_byte, 4)
-	renderBits(w, top_byte, bot_byte, 5)
-	renderBits(w, top_byte, bot_byte, 6)
-	renderBits(w, top_byte, bot_byte, 7)
+func renderBytes(w *bufio.Writer, topByte byte, btmByte byte) {
+	renderBits(w, topByte, btmByte, 0)
+	renderBits(w, topByte, btmByte, 1)
+	renderBits(w, topByte, btmByte, 2)
+	renderBits(w, topByte, btmByte, 3)
+	renderBits(w, topByte, btmByte, 4)
+	renderBits(w, topByte, btmByte, 5)
+	renderBits(w, topByte, btmByte, 6)
+	renderBits(w, topByte, btmByte, 7)
 }
 
-func renderBits(w *bufio.Writer, top_byte byte, bot_byte byte, bit int) {
+func renderBits(w *bufio.Writer, topByte byte, btmByte byte, bit int) {
 	bitH := 0
-	if top_byte&(1<<bit) != 0 {
+	if topByte&(1<<bit) != 0 {
 		bitH = 255
 	}
 	bitL := 0
-	if bot_byte&(1<<bit) != 0 {
+	if btmByte&(1<<bit) != 0 {
 		bitL = 255
 	}
 	_, _ = fmt.Fprintf(w, "\x1B[38;2;%d;%d;%dm\x1B[48;2;%d;%d;%dm\u2580\x1B[0m", bitH, bitH, bitH, bitL, bitL, bitL)
 }
 
-func heatMapU8(w *bufio.Writer, data []byte, width int, y_separator_stride int) {
+func heatMapU8(w *bufio.Writer, data []byte, width int, ySeparatorStride int, ansi256 bool) {
 	height := (len(data) + width - 1) / width
 
 	for y := 0; y < height; y += 2 {
-		if y > 0 && (y%y_separator_stride == 0) {
+		if y > 0 && (y%ySeparatorStride == 0) {
 			_, _ = fmt.Fprintln(w)
 		}
 
-		hi_byte_offset := width * y
-		lo_byte_offset := hi_byte_offset + width
+		hiByteOffset := width * y
+		loByteOffset := hiByteOffset + width
 		for x := 0; x < width; x++ {
 			var vh byte = 0
-			if hi_byte_offset < len(data) {
-				vh = data[hi_byte_offset]
+			if hiByteOffset < len(data) {
+				vh = data[hiByteOffset]
 			}
 			var vl byte = 0
-			if lo_byte_offset < len(data) {
-				vl = data[lo_byte_offset]
+			if loByteOffset < len(data) {
+				vl = data[loByteOffset]
 			}
 
-			_, _ = fmt.Fprintf(w, "\x1B[38;2;%d;%d;%dm\x1B[48;2;%d;%d;%dm\u2580\x1B[0m", vh, vh, vh, vl, vl, vl)
+			if ansi256 {
+				_, _ = fmt.Fprintf(w, "\x1B[38;5;%dm\x1B[48;5;%dm\u2580\x1B[0m", vh, vl)
+			} else {
+				_, _ = fmt.Fprintf(w, "\x1B[38;2;%d;%d;%dm\x1B[48;2;%d;%d;%dm\u2580\x1B[0m", vh, vh, vh, vl, vl, vl)
+			}
 
-			hi_byte_offset++
-			lo_byte_offset++
+			hiByteOffset++
+			loByteOffset++
 		}
 		_, _ = fmt.Fprintln(w)
 	}
